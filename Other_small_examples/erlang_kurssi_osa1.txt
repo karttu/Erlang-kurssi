@@ -1,0 +1,188 @@
+
+Datatyypit ( http://www.erlang.org/doc/reference_manual/data_types.htm ):
+
+- luvut.
+-- kokonaisluvut (integers)
+-- reaaliluvut (floats)
+
+Kokonaisluvuille on tavallisen 123 ja -77 merkintätavan lisäksi vielä
+tavat: $c (merkin c ASCII-arvo. Esimerkiksi $A = 65 ja $a = 97),
+sekä: base#value mielivaltaiselle kantaluvulle base.
+Esimerkiksi jos haluamme antaa luvun 3735928559 heksadesimaalisena,
+niin se kirjoitetaan näin: 16#DEADBEEF. Ja 64 kirjoitetaan oktaalisena
+näin: 8#100. Luku 12 binäärisenä kirjoitetaan näin: 2#1100.
+
+Huomaa että tietyt aritmeettiset operaatiot ja funktiot palauttavat float-arvon, kun taas toiset palauttavat
+aina kokonaisluvun. Esimerkiksi:
+6/2 --> 3.0
+mutta
+6 div 2 --> 3
+
+
+- atomit
+
+Atomeita ei ole kovin monessa ohjelmointikielessä. Eniten ne muistuttavat Lispin ja Schemen
+symboleita jotka on assignoitu itseensä. Toisin sanoen, Erlangissa atomi on vakio, jonka arvona
+on aina se itse:
+ atomi --> atomi.
+ isotooppi --> isotooppi.
+
+Esimerkiksi C-kielen enumeraatioista atomit eroavat edukseen siten, että niitä
+ei erikseen tarvitse määritellä sorsa-failin alussa tai jossakin
+include-tiedostossa. Eli koodiin voi kirjoitella uusia atomeita "ex-tempore"
+sitä mukaan kun niitä tarvitaan.
+Atomin erottaa muuttujasta siitä, että se alkaa pienellä kirjaimella,
+kun taas muuttujat nimet alkavat isolla alkukirjaimella. Jos
+välttämättä tarvitaan atomi joka alkaa isolla kirjaimella tai vaikka
+numerolla, niin silloin se pitää antaa yksöislainausmerkkien sisällä:
+
+111> 'Unununium'. 
+'Unununium'
+112> is_atom('Unununium').
+true
+
+- tuplet
+
+Tuplessa on _määrätty_ määrä elementtejä aaltosulkujen sisällä, erotettuna toisistaan
+pilkuilla. {esimerkiksi,tämä,on,tuple}.
+Elementtien ei tarvitse olla kaikkien samaa tyyppiä, ja
+{esimerkiksi,{myös,{tämä,on},1},tuple}.
+
+Tuplejen elementteihin pääsee helpoiten käsiksi _pattern matching_in avulla.
+Jos teemme assignoinnin {Eka,Toka} = {seuraavaksi,123}.
+niin sen jälkeen muuttujassa Eka on tuplen ensimmäinen elementti,
+ja muuttujassa Toka sen toinen elementti:
+   Eka --> seuraavaksi
+   Toka --> 123.
+
+   {First,Second,Third} = {esimerkiksi,{myös,{tämä,on},1},tuple}.
+Mitä ovat muuttujien First, Second ja Third arvot tämän assignoinnin
+jälkeen?
+
+Tupleja käytetään Erlangissa usein sopivan rakenteen antamiseksi prosessien välisille
+viesteille, joskus myös "itsedokumentoiville" funktio-argumenteille. (Hieman ryhtiä, mutta joustavasti!)
+
+
+- listat
+
+Lista koostuu nollasta tai useammasta elementistä (alkiosta), jotka voivat
+olla tyypiltään mitä tahansa: lukuja, atomeita, tupleja, tai listoja.
+
+Esimerkkejä:
+
+ [] on niin kutsuttu tyhjä lista. length([]) = 0.
+
+ [1,2,3] on kolmen elementin lista, jonka ensimmäinen elementti on kokonaisluku 1,
+ ja viimeinen elementti on kokonaisluku 3.
+ lists:reverse([1,2,3]) -> [3,2,1]
+
+ [alpha,bravo,charlie,delta,echo,foxtrot] on lista joka koostuu kuudesta atomista.
+
+ Listan alkioiden _ei tarvitse_ olla kaikkien samaa tyyppiä. Esimerkiksi listassa
+ [eka,[toka,2],{kolmas,3}] ensimmäinen alkio on atomi eka, toinen alkio on lista
+ [toka,2], (jossa vuorostaan ensimmäinen alkio on atomi toka ja toinen alkio on kokonaisluku 2.)
+ Kolmantena alkiona on tuple (kts. alla) {kolmas,3}, joka sekin koostuu kahdesta
+ elementistä.
+
+ Kaikilla listoilla on sekä _pää_ että _häntä_, tyhjää listaa lukuunottamatta, jolla
+ siis ei ole päätä eikä häntää.
+ Pää tarkoittaa listan ensimmäistä elementtiä, ja häntä kaikkia sen jälkeen tulevia.
+ Näihin pääsee käsiksi muun muassa funktioilla hd ja tl (lyhenteet sanoista head ja tail).
+ Esimerkiksi: hd([eka,[toka,2],{kolmas,3}]) -> eka.
+ tl([eka,[toka,2],{kolmas,3}]) -> [[toka,2],{kolmas,3}].
+ Listan, jossa on vain yksi elementti häntä on tyhjä lista:
+ tl([onlyone]) --> [].
+ Pää taas on tuo alkio itse, kuten kuuluukin määritelmän mukaan:
+ hd([onlyone]) --> onlyone.
+
+ Myös listoja voi hajottaa osiinsa pattern matchingin avulla, ja itse asiassa
+ se on tärkein tapa, jolla Erlangissa kirjoitetaan listankäsittelyfunktioita.
+
+ Jos teemme esimerkiksi assignoinnin
+
+ [Eka|Loput] = [eka,[toka,2],{kolmas,3}].
+ niin sen jälkeen,
+ Eka --> eka
+ Loput --> [[toka,2],{kolmas,3}]
+
+
+
+-- merkkijonot
+
+ Erlangin merkkijonot ovat itseasiassa listoja, jotka koostuvat merkkijonon
+ kirjainten ASCII-arvoista. Tämän huomaa esimerkiksi naputtelemalla oheisen
+ listan sisään Erlang-shelliin:
+ [72,97,115,115,117,97,44,32,101,105,107,246,32,118,97,105,110,63]
+ jolloin tulkki näyttää sen merkkijonona:
+ "Hassua, eikö vain?"
+ Huomaa, että tässä ei varsinaisesti suoriteta mitään laskentaa, vaan
+ molemmat muodot, [72,97,115,115,117,97,44,32,101,105,107,246,32,118,97,105,110,63]
+ ja "Hassua, eikö vain?" ovat vain kaksi eri tapaa syöttää/spesifioida täsmälleen
+ samanlainen lista ohjelmalle.
+
+ Ainoa asia mikä määrää näyttääkö Erlang-shelli listan listana vai merkkijonona
+ on se, onko siinä muitakin kuin ASCII-alueelle sijoittuvia kokonaislukuja.
+ Esimerkiksi jos annamme tulkille joko merkkijonon "Kummaa" tai listan [75,117,109,109,97,97]
+ niin se näytetään kummassakin tapauksessa muodossa: "Kummaa".
+ Mutta jos taas lisäämme vaikkapa merkkijonon (eli listan) alkuun atomin kas (joka selvästikään siis
+ ei ole ASCII-alueelle sijoittuva kokonaisluku!), niin silloin näemmekin koko
+ listan lista-muodossaan:
+ [kas|"Kummaa"] --> [kas,75,117,109,109,97,97].
+
+ Tällä ratkaisulla (merkkijonojen esittäminen listoina) on sekä hyvät että huonot puolensa.
+ Ensiksikin, monia ihmisiä ärsyttää se, että Erlang-shell saattaa joskus palauttaa
+ täysin päättömältä tuntuvan tuloksen.
+ Vertaa esimerkiksi:
+ lists:map(fun(X) -> X*X end,[1,2,3,4,5,6])  --> [1,4,9,16,25,36]
+
+ ja sama kutsu hiukan eri argumenttilistalla:
+ lists:map(fun(X) -> X*X end,[9,10,11]) --> "Qdy"
+ lists:map(fun(X) -> X*X end,[6,7,8,9,10,11]) --> "$1@Qdy"
+
+ Mikä meni pieleen? Ei mikään. Lukujen 6, 7, 8, 9, 10 ja 11 neliöt,
+ 36, 49, 64, 81, 100 ja 121 vaan sattuvat kaikki osumaan ASCII-alueelle
+ (ne ovat dollarinmerkin ($), digitin '1', ja kissantassun '@' sekä
+ kirjainten Q, d ja y ASCII-koodit), joten shelli
+ _näyttää_ tuloksen merkkijonona "$1@Qdy", vaikka pohjimmiltaan
+ kyseessä _on_ lista [36,49,64,81,100,121].
+
+ "Qdy", vaikka pohjimmiltaan kyseessä _on_ lista [81,100,121].
+
+ Toinen, ehkä oleellisempi puute Erlangin ratkaisussa on se,
+ että merkkijonon kirjaimia ei voi aksessoida suoraan, vaan
+ lista pitää "kelata alusta saakka", toisin sanoen, jotta päästään käsiksi
+ n:nteen kirjaimeen, on seurattava n kertaa listan "häntäpointtereita"
+ ensimmäisestä alkiosta lähtien.
+
+ Toisaalta koska merkkijonot ovat listoja, niin niitä voi käsitellä
+ aivan yhtä vaivattomasti kuin listojakin (siis ohjelmoijan kannalta!),
+ erilaisilla lists-kirjaston rutiineilla, lists:reverse("Huihai"). --> "iahiuH".
+ sekä myöskin itsekirjoitetuilla, pattern matchingiä hyödyntävillä
+ funktioilla.
+
+ Erlangin bit-string ja binary datatyypit tarjoavat vaihtoehtoisen tavan
+ esittää merkkijonotyylistä dataa, hieman tehokkaammin ja eksaktimmin. Niiden käsittely
+ kuitenkin sivuutetaan tällä kurssilla.
+
+ Huom. io:format kutsussa ~w näyttää argumentin aina listana, kun taas ~s näyttää sen
+ merkkijono-muodossaan:
+
+272> io:format("/~w/~n",[[75,117,109,109,97,97]]).
+/[75,117,109,109,97,97]/
+ok
+273> io:format("/~s/~n",[[75,117,109,109,97,97]]).
+/Kummaa/
+ok
+
+
+
+
+
+
+
+
+
+
+
+
+

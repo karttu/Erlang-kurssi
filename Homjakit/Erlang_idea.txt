@@ -1,0 +1,110 @@
+
+
+Viestit agenteilta serverille:
+
+move 0-7 (suunnat north - northwest)
+  siirtyy johonkin kahdeksasta ilmansuunnasta.
+
+    jos paikka johon yritetään siirtyä sisältää joko kiinteän seinän
+    (pelialueen reunan) tai toisen agentin, niin ei liiku minnekään,
+    vaan jämähtää LUUPAA_TAUKO syklin ajaksi, jonka jälkeen voi liikkua taas.
+    (reunat ja agentit pitäisi selvitä serverin agenteille välittämistä
+    viesteistä).
+
+    jos paikka johon siirrytään on tyhjä,
+      vie yhden maailmasyklin
+    jos paikka johon siirrytään sisältää ruokaa,
+      vie yhden (tai useamman?) maailmasyklin
+    jos paikka johon siirrytään sisältää blokin,
+      niin vie neljä maailmasykliä, jonka jälkeen blokki on hävinnyt
+      (paikka on taas tyhjä),
+      ja sen takaa mahdollisesti näkyvät asiat raportoidaan taas
+
+
+leave_block_and_move 0-7 (suunnat north - northwest)
+  jättää entiseen paikkaan blokin (yksi maailmasykli),
+    ja siirtyy johonkin kahdeksasta ilmansuunnasta.
+    joka vie toisen maailmasyklin (liikuntakykyinen taas kahden
+    maailmasyklin kuluttua), mikäli paikka tyhjä, mutta jos
+    se sisältää blokin niin sen häviäminen kestää neljä sykliä,
+    joten liikuntakykyinen vasta viiden syklin päästä.
+
+    Jos paikka johon yritettiin siirtyä on kiinteätä seinää,
+    ei tee mitään, muuta kuin pakkotaukoa rangaistukseksi 
+    LUUPAA_TAUKO ajan.
+    Jos paikka johon yritettiin siirtyä on tullut toisen agentin okkupoimaksi
+    (blokinjätön jälkeen), niin juuri jätetty blokki poistuukin,
+    ja agentti jää siihen (alkuruutuunsa).
+
+
+Blokit voivat olla joko pysyviä (kunnes jokin agentti ne "syö"),
+tai sitten niillä voi olla jokin max. elinaika.
+Ruoan suhteen sama. Mutta ruoalle tuskin tarvitsee max.elinaikaa,
+koska ne syödään muutenkin pois.
+
+Viestit serveriltä agenteille:
+
+  jokaisen maailmasyklin jälkeen lähettää jokaiselle agentille tiedon, kunkin
+  näkyvyysalueen mukaisesti (jota rajoittavat sekä kiinteät seinät
+  että blokit että ruokapalat että toiset agentitkin) mitä muutoksia
+  on tapahtunut näkyvyysalueella (ruokaa tullut lisää, tai se on syöty pois),
+  uusia blokkeja, toisten agenttien muuttuneita paikkoja, jne.
+  Agenttien omana tehtävänä on pitää kirjaa ajasta? Vai tuleeko
+  jokin juokseva countteri serveriltä? (jälk. debuggauksen kannalta parempi).
+
+  Maailmantilanne voidaan välittää:
+
+   A) absoluuttisesti, eli joko kunkin (näkyvän) koordinaatin sisältö,
+  tai
+   B) relatiivisesti, mitä muutoksia on tapahtunut (blokki syntyi ruutuun
+  se ja se, agentti liikkui ruudusta toiseen, tai ruudusta se ja se
+  hävisi agentti, ja ruutuun se ja se ilmestyi agentti).
+
+  Koordinaatit voidaan välittää absoluuttisesti, tai relatiivisesti
+  suhteessa agenttiin. (Miten kahden agentin yhteispeli sitten sujuu,
+  kolmiomittauksellako?)
+  Relatiivinen siinäkin mielessä parempi että esim. agentin "keskittäminen"
+  vaatii silloin etäisyyden mittausta seiniin pelin alussa.
+  (Agentit heitetään randomisti pelilaudalle).
+  Agentti voi myös kohdentaa itsensä hakeutumalla pelin alussa esim.
+  vasempaan alakulmaan, ja sitten pitämällä absoluuttisista
+  koordinaateista kirjaa.
+  (Miten seinät ja blokit näkyvät kauempaa? Seinät eivät näy ennenkuin
+  vasta muutaman ruudun päästä?)
+
+  Näkevätkö agentit toisensa anonyymeinä vai jollakin vakio-id:llä?
+  (Joka on agentin ohjelmoijan tiedossa, mutta ei muiden? Jolloin
+  tiimin muodostaminen vaatii senkin, että ohjelmoijat kertovat agenttiensa
+  id:t toisilleen.)
+
+  jokaisen agentin antaman komennon (move tai block_and_move) jälkeen
+  antaa jonkin kuitin siitä, liikkuiko vai ei, ja milloin liikkuminen taas
+  mahdollista?
+  (toisaalta se ilmenee myös yleistilanteesta?)
+
+  Jos agentti myöhästyy seuraavan siirron laskemisessa, niin ettei se ehdi
+  mukaan nykyiseen maailmasykliin, niin ko. siirto automaattisesti tehdään
+  sitten seuraavassa.
+  Mikäli agentti yrittää yhden maailmasyklin aikana tehdä kaksi siirtoa
+  (tai ennenkuin pakollinen taukoaika esim. blokin jättämisen jälkeen loppuu)
+  niin serveri antaa jonkin NAKki-kuittauksen.
+
+  Agentti voi aina tieten tahtoen passata, siis olla tekemättä mitään yhden
+  syklin aikana.
+
+  Neliöruudukossa (gridissä) näkyvyys lasketaan siten, että agentin silmä
+  on infinitesimaalinen piste neliön keskellä, ja jokainen jätetty blokki
+  täyttää koko neliön, ja jotta kohderuutu näkyisi, agentin silmän
+  (neliön keskustan) ja kohderuudun keskustan välille ei saa osua
+  blokkia.
+  Eli:
+   Blocks_A_B_C(A,B,C,ss)
+  laskee blokkaako koordinaatteihin B asetettu ss x ss kokoinen blokki
+  koordinaatit A ja C välisen suoran.
+
+  A..B...
+  ...B...
+  ..B...Y
+
+
+

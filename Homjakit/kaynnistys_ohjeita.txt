@@ -1,0 +1,111 @@
+
+Käynnistysohjeita agenttipelisysteemin starttaamiseksi:
+
+Mene ensin hakemistoon, johon olet ladannut nämä sorsat,
+ja editoi serverhostname.hrl :ään sen koneen lokaali
+hostinimi, jossa aiot moveserver:iä ajaa.
+
+------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------
+
+
+Käynnistä ensimmäinen Erlang-shelli nimellä moveserver jossain ikkunassa,
+esim. Windowsin komentotulkissa tästä hakemistosta löytyvällä aloita.bat
+(kun olet ensin editoinut siihen oikean pathin asennettuun erl.exe:en).
+Huom: Unix/Linux-ympäristössä vastaava komento on vain: erl -setcookie pipari -sname moveserver
+
+Mutta Windowsin CMD-komentotulkin alla esimerkiksi näin:
+
+C:\Users\karttu\A\Erlang\Homjakit>aloita moveserver
+
+
+C:\Users\karttu\A\Erlang\Homjakit>C:\Progra~2\erl5.9.3.1\bin\erl.exe -setcookie pipari -sname moveserver
+Eshell V5.9.3.1  (abort with ^G)
+(moveserver@airjama)1>
+
+Käynnistetyn Erlang-shellin promptiin kirjoita:
+(moveserver@airjama)2> c(moveserver).
+{ok,moveserver}
+
+(JOKA ENSIN KÄÄNTÄÄ moveserver.erl:in JA LATAA vastaavan .beam-modulin)
+
+moveserver käynnistetään oheisella komennolla:
+
+(moveserver@airjama)3> moveserver:init(1,[]).
+true
+
+Jonka jälkeen pitäisi pian alkaa tulla status-viestejä:
+
+(moveserver@airjama)4> Time: 2, sent the board list to 0 showboards.
+(moveserver@airjama)4> Time 2: Sent a new worldview to 0 agents, whose time to move was now or already passed.
+(moveserver@airjama)4>
+
+Nopeutta saa lisää kirjoittamalla esimerkiksi:
+
+(moveserver@airjama)5> ticker ! 1000.
+
+(ja jopa 400 saattaa toimia nopealla koneella. Sitä pienemmillä pausseilla showboard
+voi jäädä jälkeen näytössään.)
+
+Systeemin saa käytännössä paussiin, laittamalla ticker-paussin tarpeeksi suureksi, esim.
+näin:
+(moveserver@airjama)6> ticker ! 100000000.
+
+
+------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------
+
+
+Avaa toinen komentotulkki-ikkuna (tai shelli Linuxissa), ja käynnistä siinä:
+
+C:\Users\karttu\A\Erlang\Homjakit>aloita showboard
+
+C:\Users\karttu\A\Erlang\Homjakit>C:\Progra~2\erl5.9.3.1\bin\erl.exe -setcookie
+pipari -sname showboard
+Eshell V5.9.3.1  (abort with ^G)
+(showboard@airjama)1> c(showboard).
+{ok,showboard}
+(showboard@airjama)3> showboard:init().
+<0.56.0>
+(showboard@airjama)3>
+
+Kun Wx valittaa fontista, valitse fontiksi Lucida Sans Unicode, jonka jälkeen pelilautaruudukko
+pitäisi tulla näytölle. Ruudukko kannataa oikeasta alakulmasta venyttämällä vetää isommaksi.
+
+------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------
+
+
+Avaa kolmas komentotulkki-ikkuna (tai shelli Linuxissa), ja käynnistä siinä:
+
+C:\Users\karttu\A\Erlang\Homjakit>aloita agent1
+
+C:\Users\karttu\A\Erlang\Homjakit>aloita agent1
+Eshell V5.9.3.1  (abort with ^G)
+(agent1@airjama)1> c(agent_adam2).
+agent_adam2.erl:64: Warning: variable 'Score' is unused
+{ok,agent_adam2}
+(agent1@airjama)3> agent_adam2:init(1).
+true
+(agent1@airjama)4>
+
+(kestää jonkin aikaa ennenkuin agentti alkaa liikkua.)
+
+------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------
+
+Avaa neljäskin ikkuna, ja starttaa siinä node nimeltä agent2, jossa starttaa agent_corvus:
+
+C:\Users\karttu\A\Erlang\Homjakit>aloita agent2
+C:\Users\karttu\A\Erlang\Homjakit>C:\Progra~2\erl5.9.3.1\bin\erl.exe -setcookie
+pipari -sname agent2
+Eshell V5.9.3.1  (abort with ^G)
+(agent2@airjama)1> c(agent_corvus).
+agent_corvus.erl:58: Warning: variable 'Score' is unused
+agent_corvus.erl:184: Warning: the guard for this clause evaluates to 'false'
+{ok,agent_corvus}
+(agent2@airjama)2> agent_corvus:init(0).
+true
+(agent2@airjama)3>
+
+

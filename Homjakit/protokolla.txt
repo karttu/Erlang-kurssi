@@ -1,0 +1,187 @@
+
+Agentin ja moveserver:in v‰linen kommunikaatioprotokolla,
+alustavasti 5.4.2013, klo 14:06 by AK.
+
+(Ei v‰ltt‰m‰tt‰ en‰‰ pid‰ paikkaansa, p‰‰ttele sen sijaan
+moveserver.erl sorsasta uusin toiminta...)
+
+Agentista alustava referenssi-implementaatio t‰ss‰ samassa
+hakemistossa, agent_adam.erl
+
+Agentti l‰hett‰‰ moveserver:ille komentoja funktiolla
+  send_game_command(Gameserverpid,Myref,komento,parametrit)
+miss‰ Gameserverpid on moveserver:in pid (voi olla toisessa
+solmussa), ja Myref on jokin mielivaltainen make_ref() kutsulla
+luotu referenssi, jota ei nykyisell‰‰n viel‰ tarkisteta.
+
+Agentti                                      moveserver
+
+Cmd       Parameters
+
+
+login     []                 ---->           loggaa agentin sis‰‰n, ja arpoo
+          (toistaiseksi                      sille uuden agenttinumeron (Agentid),
+            ignoroidaan)                     sek‰ paikan laudalla, mik‰li
+                                             kyseisest‰ solmusta ei ole aikaisemmin
+                                             logattu moveserver:iin sis‰‰n.
+                                             Muuten palauttaa vanhan agentti-id:n
+                                             ja se jatkaa samalta paikalta laudalla
+                                             kuin mihin se on viimeksi j‰‰nyt.
+                                             Pakollinen paussi t‰m‰n j‰lkeen,
+                                             relogin-huijausten v‰ltt‰miseksi.
+
+makemove  Joku seuraavista
+          siirroista:
+
+          {move,Direction}                   Yritt‰‰ siirt‰‰ agenttia suuntaan Direction
+                                             joka on kokonaisluku 0:sta 7:‰‰n.
+                                             Suunnat ovat: 
+                                                 0 -> {X+1,Y};   %% E
+                                                 1 -> {X+1,Y+1}; %% SE
+                                                 2 -> {X,Y+1};   %% S
+                                                 3 -> {X-1,Y+1}; %% SW
+                                                 4 -> {X-1,Y};   %% W
+                                                 5 -> {X-1,Y-1}; %% NW
+                                                 6 -> {X,Y-1};   %% N
+                                                 7 -> {X+1,Y-1}  %% NE
+
+                                             Mik‰li paikka johon siirryttiin oli tyhj‰,
+                                             agentti saa liikku uudestaan jo seuraavalla
+                                             siirrolla. Mik‰li siin‰ oli blokkipala, niin
+                                             agentti siirtyy blokkipalan paikalle (blokkipala
+                                             h‰vi‰‰), ja agentti j‰m‰ht‰‰ paikalleen nelj‰n
+                                             siirron ajaksi. (Siis se saa liikkua vasta nelj‰n
+                                             siirron p‰‰st‰).
+                                             
+                                             Mik‰li agentti yritt‰‰ siirty‰ laudalta ulos,
+                                             se pysyy paikallaan, ja saa status-ilmoituksen {blockedby,wall}.
+
+                                             Mik‰li agentti yritt‰‰ siirty‰ ruutuun jossa toinen agentti
+                                             (joka on saattanut siirty‰ siihen jopa vasta t‰ll‰ samalla
+                                             siirtovuorolla, mik‰li kyseinen agenttiluuppi on ehtinyt
+                                             l‰hett‰‰ makemove-siirtonsa ennen t‰t‰ agenttiluuppia!)
+                                             niin t‰m‰ agentti saa status-ilmoituksen
+
+                                              {blockedby,{agent,Otheragent,EXTRAINFO_FOR_FUTURE}}
+
+                                             (Huom: EXTRAINFO_FOR_FUTURE on t‰ll‰ hetkell‰ []).
+
+
+                                             TO BE IMPLEMENTED SOON:
+                                             Mik‰li paikassa johon siirryttiin oli ruokaa
+                                             (tai jotain muuta arvokasta), niin se h‰vi‰‰
+                                             (agentti siirtyy sen paikalle), ja agentin scorea
+                                             kasvatetaan saman verran.
+
+         {layblockandmove,Direction}         Tarkistaa voidaanko siirty‰ suuntaan Direction,
+                                             jos voidaan, niin j‰tet‰‰n vanhaan paikkaan
+                                             blokkipala, ja siirryt‰‰n kyseiseen uuteen ruutuun.
+                                             Agentti voi liikkua uudestaan vasta 2:n siirron p‰‰st‰,
+                                             paitsi mik‰li uudessa paikassa on blokkipala, jolloin
+                                             agentti saa liikkua vasta 6:n siirron p‰‰st‰.
+                                             (N‰m‰ odotusajat ovat parametroitavissa mieleisiksemme!)
+
+         {waitandsee,Ncycles}                Siirtokomento jolla agentti ilmoittaa, ettei aio t‰ll‰
+                                             kierroksella tehd‰ mit‰‰n, muuta kuin odottaa Ncycles
+                                             syklin verran (esim. {waitandsee,1} on hyv‰ jos haluaa
+                                             passata yhden siirron, tai kertoa moveserver:ille ett‰
+                                             on hengiss‰.)
+
+
+Peliserveri moveserver p‰ivitt‰‰ pelilaudan tilannetta niin usein kuin erillinen ticker-prosessi
+l‰hett‰‰ sille timetick-viestej‰, mik‰ siis m‰‰ritt‰‰ yhden pelisyklin keston.
+Agentit saavat v‰litt‰‰ korkeintaan yhden komennon per pelisykli, ja mahdollisesti viel‰
+harvemmin, jos ovat liikkuneet blokin paikalle (mik‰ siis aiheuttaa nelj‰n syklin karenssin agentille),
+tai j‰tt‰‰ itse blokin j‰lkeens‰ (kahden syklin karenssi).
+Jos kaksi agenttia yritt‰‰ siirty‰ samaan vapaaseen ruutuun, niin se joka ensimm‰isen‰
+l‰hett‰‰ moveserver:ille move tai layblockandmove-komennon p‰‰see siihen, ja toiselle
+agentille v‰litet‰‰n sitten viesti {blockedby,{agent,Toisen_agentin_id,JA_EHKA_JOTAIN_MUUTA_INFOA}}.
+
+Joka kerta kun moveserver on saanut agentilta jonkin yll‰olevista komennoista,
+se seuraavan syklin alussa l‰hett‰‰ sille seuraavanmuotoisen tuple-listan:
+
+    [{agentref,AgentRef},   %% Sama referenssi, jonka agentti l‰hetti send_game_command funktiolla.
+                                (EI JUURI NYT TSEKATA, MUTTA VOI KƒYTTƒƒ TULEVAISUUDESSA JƒYNƒNESTOON.)
+
+     {agentid,Agentid},     %% Agentille allokoitu numero moveserver:iss‰, yhdest‰ ylˆsp‰in.
+
+     {agentchar,Agentchar}, %% Mill‰ Unicode-merkill‰ agentti n‰ytet‰‰n pelilaudalla?
+
+     {servertimenow,Timestamp}, %% Serverin juokseva syklinumero, alkaa ykkˆsest‰.
+
+     {nexttimemoveallowed,Nexttimemoveallowed}, %% Mill‰ syklill‰ agentti saa liikkua seuraavan kerran?
+
+     {statusmessage,Statusmessage}, %% Edellisen komennon tuottama statusviesti. Esim. moved,
+                                        {logged_in,welcome_again},
+                                        you_are_too_hasty (Mik‰li agentti yritt‰‰ siirty‰
+                                                           ennen karenssin loppumista)
+
+     {score,0},                     %% Agentin t‰h‰n menness‰ ker‰‰m‰ score.
+
+     {worldview,Worldview},        %% Lista agentin nykyisest‰ olinpaikastaan n‰kemist‰ asioista.
+                                      Katso alla.
+
+     | _REST_FOR_FUTURE_FUNCTIONALITY] %% Mahdollisia myˆhempi‰ lis‰yksi‰, tai debuggauksen vuoksi
+                                          toistaiseksi esiintyvi‰ lis‰tupleja.
+
+
+
+Worldview on lista formaattia:
+  [ {Relatiivinen_koordinaatti1, Asia1},
+    {Relatiivinen_koordinaatti2, Asia2},
+    ...
+    {Relatiivinen_koordinaattiN, AsiaN}
+  ]
+
+ Relatiiviset koordinaatit ovat muotoa {X_offset, Y_offset}
+ eli esimerkiksi {-1,0} kertoo paikasta "l‰nness‰" (yksi vasemmalle
+ samalla rivill‰), {1,1} paikasta "kaakossa" (SE = SouthEast),
+ ja {0,12} paikasta joka on kaksitoista ruutua suoraan alasp‰in eli "etel‰‰n".
+ Tyhj‰t ruudut eiv‰t t‰ss‰ listassa, mutta aivan vieress‰ oleva sein‰ n‰kyy,
+ samoin kuin agentit, t‰h‰n tyyliin:
+
+ [{ {-1,-1}, {blockedby,wall}},
+  { {-1,0},  {blockedby,wall}},
+  { {-1,1},  {blockedby,wall}},
+  { {0,-1},  {agent,1,[JOTAKIN]}}]
+
+ Huom! t‰ll‰ hetkell‰ kyseisess‰ listassa n‰kyy vain agentin v‰littˆm‰ss‰
+ naapurustossa olevat asiat, joten nykyisell‰‰n se voi olla maksimissaan kahdeksan
+ pituinen. Myˆhemmin siin‰ n‰kyy kuitenkin pidemm‰lt‰kin n‰kyvi‰ asioita,
+ joten varaudu k‰sittelem‰‰n mielivaltaisen pituista listaa!
+
+
+Huom: periaatteessa moveserver vastaa vain niille agenteille jotka ovat
+edellisell‰ syklill‰ v‰litt‰neet sille jonkin komennon. Se VOI kuitenkin
+joka syklill‰ l‰hett‰‰ viestin kaikille sis‰‰nloggautuneille agenteille
+(jolloin statusviestin‰ tryagain), niin halutessaan.
+(Ja n‰in toistaiseksi tekeekin, mutta saattaa myˆhemmin pit‰‰ hiukan
+enemm‰n paussia agenttien kanssa jota se ep‰ilee kr‰sh‰nneeksi.)
+
+
+Keille moveserver l‰hett‰‰ viestej‰ kullakin syklill‰?
+
+A) Kaikille jotka ovat kuluneen vuoron aikana tehneet siirron,
+onnistuneen tai ep‰onnistuneen.
+
+B) Lis‰ksi kaikille niille agenteille, jotka tulevalla vuorolla
+tulevat siirtovuoroon (Nextmoveallowed = Newtimestamp) l‰hetet‰‰n
+please_wake_up statuksella varustettu viesti.
+
+Huom, settien A ja B leikkaus pit‰isi olla tyhj‰, ettei l‰hetet‰ jollekin
+agentille kahteen kertaan viestej‰ saman siirron aikana. Hankalaa...
+
+P‰‰tˆs, tehd‰‰nkin n‰in:
+Kaikille niille agenteille, jotka tulevalla vuorolla
+tulevat siirtovuoroon (Nextmoveallowed = Newtimestamp) l‰hetet‰‰n
+edellisen siirtonsa statuksella varustettu viesti.
+
+Lis‰ksi kaikille niille agenteille, joiden siirtovuoro nyt tulevalla vuorolla
+on jo mennyt ohi (Nextmoveallowed < Newtimestamp) l‰hetet‰‰n
+please_wake_up statuksella (tai sitten sill‰ samalla mik‰ oli aiemmin) varustettu viesti.
+
+Huom: agentit eiv‰t oletuksena tied‰ mit‰‰n omasta absoluuttisesta
+paikastaan laudalla, samoin kuin ei myˆsk‰‰n sen kokoa. (Se selvi‰‰
+tietysti kokeilemalla, niin ett‰ agentti lyˆ vaikkapa p‰‰t‰‰n sein‰‰n.)
+
+

@@ -1,0 +1,388 @@
+-module(life).
+
+%% 
+%% http://www.iki.fi/kartturi/erlang/life_erl.txt
+%%
+
+%% life.erl - Yksinkertainen Erlang-toteutus John Conwayn Life-soluautomaatista
+%% T‰m‰ versio k‰ytt‰‰ yksinkertaista ASCII-grafiikkaa tulostukseen.
+
+%%
+%% http://www.iki.fi/kartturi/erlang/life_gs_erl.txt
+%% on gs-grafiikkakirjastoa k‰ytt‰v‰ versio.
+%%
+
+%% Copyright (C) 2005 by Antti Karttunen
+%% Lis‰tietoja: Antti<piste>Karttunen (at) gmail<piste>com
+
+%% Erlang-k‰‰nt‰j‰ lˆytyy osoitteesta: http://www.erlang.org/
+
+%% Kuvaus:
+
+%% Ohjelman l‰htˆkohtana on jakaa ohjelman suoritus osiin, niin ett‰ kunkin
+%% yksitt‰isen Life-solun laskenta tapahtuu omassa prosessissaan. Kunkin
+%% solun seuraava tila riippuu, paitsi sen omasta tilasta sill‰ hetkell‰,
+%% niin myˆs sen kahdeksan naapurin tilasta. Solut v‰litt‰v‰t oman
+%% tilansa naapureilleen Erlang-kielen send-k‰skyll‰ (!) ja vastaanottavat
+%% naapuriensa viestit receive-k‰skyll‰. Soluprosessien keskin‰ist‰
+%% viestint‰‰ ei tarvitse synkronoida.
+
+%% Solujen toimintaa kokonaisuudessan valvoo ja synkronoi erillinen
+%% valvojaprosessi, jolle solut myˆs l‰hett‰v‰t kulloisenkin tilansa
+%% tulostusta varten.
+
+
+%% Funktio cell laskee kunkin solun tilan
+%%
+%%   Ohjelman ydin on funktio cell, joka laskee ja yll‰pit‰‰ kunkin solun
+%% tilaa.  Se jakautuu kolmeen eri haaraan, joita kutsutaan laskennan eri
+%% vaiheissa.  Ensimm‰ist‰ haaraa kutsutaan kun solut on k‰ynnistetty
+%% valvojaprosessista funktiolla spawn_cell. T‰ss‰ haarassa solu l‰hett‰‰
+%% valvojalle oman tilatietonsa Erlangin send-k‰skyll‰. K‰sky koostuu
+%% huutomerkist‰, jonka vasemmalla puolella annetaan sen prosessin nimi
+%% (tai ID-numero), jolle viesti l‰hetet‰‰n, ja oikealla puolella itse
+%% l‰hetett‰v‰ viesti.
+%% 
+%%   Viestinl‰hetyksen j‰lkeen j‰‰d‰‰n odottamaan receive-k‰skyll‰
+%% valvojaprosessin "next"-viesti‰. (Sen valvojaprosessi l‰hett‰‰ kaikille
+%% vasta sitten, kun se on saanut nykyiset tilatiedot kaikilta soluilta).
+%% Kun "next"-viesti tulee, l‰hetet‰‰n oma tila funktiolla send_state_to_all
+%% myˆs kaikille kahdeksalle naapurisolulle (joiden rekisterˆidyt
+%% nimet lˆytyv‰t listasta Neighbours), jonka j‰lkeen siirryt‰‰n
+%% cell-funktion kolmanteen haaraan odottelemaan samoilta naapurisoluilta
+%% saapuvia viestej‰.
+%% 
+%%   Viestit ovat muotoa {NName,NState}, joista parin ensimm‰inen j‰sen
+%% kertoo l‰hett‰v‰n naapurisolun nimen, ja toinen sen tilan (0=kuollut,
+%% 1=elossa).  Kolmannessa haarassa pyˆrit‰‰n niin kauan kuin viestit
+%% kaikilta kahdeksalta naapurilta ovat saapuneet, jonka j‰lkeen
+%% p‰‰dyt‰‰n cell-funktion toiseen haaraan, jossa voidaan laskea solun
+%% uusi tila, jonka j‰lkeen voidaankin siirty‰ takaisin ensimm‰iseen
+%% haaraan, jossa sykli alkaa alusta.
+
+
+%% Valvojaprosessi synkronoi solujen laskennan
+%%
+%%   Valvojaprosessi k‰ynnistet‰‰n start-funktiolla, joka silmukoi
+%% supervise-funktion kolmiparametrisen haaran omaksi prosessikseen ja
+%% rekisterˆi sen nimell‰ "valvoja". Siin‰ puolestaan silmukoidaan omiksi
+%% aliprosesseikseen (spawn_all_cells ja spawn_cell funktioiden avulla)
+%% kaikki ruudukon Size x Size solua, jonka j‰lkeen niille kaikille
+%% l‰hetet‰‰n next-viesti, merkkin‰ siit‰, ett‰ ne voivat aloittaa.
+%% 
+%%   Sen j‰lkeen siirryt‰‰n supervise-funktion kolmanteen haaraan
+%% odottelemaan soluprosessien viestej‰. Vasta kun kaikki solut ovat
+%% l‰hett‰neet tilatietonsa p‰‰dyt‰‰n keskimm‰iseen haaraan, jossa
+%% l‰hetet‰‰n next-viesti kaikille, ja samalla tulostetaan ruudulle
+%% solusimulaation uusi tilanne.
+%% 
+%%   Koska viestit soluilta voivat tulla miss‰ j‰rjestyksess‰ tahansa,
+%% niin valvojaprosessin pit‰‰ tallettaa niiden tila v‰liaikaisesti
+%% "dictionaryyn", joka on Perl-kielen hasheja vastaava assosiatiivinen
+%% taulukko.  Sit‰ k‰sitell‰‰n OTP-kirjaston mukana tulevassa
+%% "dict"-modulissa m‰‰ritellyill‰ dict:new, dict:store ja dict:fetch
+%% kutsuilla.
+
+%%  Pino ei vuoda yli cell- ja supervise-funktioissa, sill‰ kaikki
+%% rekursiokutsut niiss‰ ovat ns. "h‰nt‰rekursiivisia", eli
+%% tavukoodik‰‰nt‰j‰ optimoi ne tavallisiksi silmukoiksi.
+
+
+%% Talleta t‰m‰ tiedosto nimell‰ life.erl vaikkapa hakemistoon /my/erlang
+%% (tai vastaavaan...), ja Erlang-shellin k‰ynnistetty‰si siirry
+%% samaan hakemistoon komennolla cd("/my/erlang").
+%% jonka j‰lkeen voit ladata ohjelman Erlang-tulkkiin komennolla c(life).
+
+%% Simulaation voi k‰ynnist‰‰ esimerkiksi komennolla life:start_spaceship().
+%% Simulaatio lopetetaan komennolla life:stop().
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%                                                                    %%
+%%              Varsinainen ohjelmakoodi alkaa.                       %%
+%%                                                                    %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%% export-lauseessa luetellaan niiden funktioiden nimet,
+%% joiden halutaan olevan muista moduuleista (tai komentorivilt‰)
+%% kutsuttavissa:
+
+-export([make_cellname/2,list_of_cellnames/1,cells_neighbours/2,
+         spawn_cell/3,cell/6,nextgen/1,liferule/2,
+         supervise/3,start/1,stop/0,start_glider/0,start_spaceship/0]).
+
+
+%% import-lauseessa luetellaan sellaisia muissa moduuleissa
+%% esiintyvi‰ funktioita, joihin halutaan viitata lyhyesti.
+%% Esimerkiksi t‰ss‰ annetun k‰skyn j‰lkeen riitt‰‰ ett‰ sanotaan
+%% append, foreach, jne. sen sijaan, ett‰ kirjoitettaisiin
+%% lists:append, lists:foreach, jne.
+
+-import(lists,[append/1,foreach/2,map/2,nth/2,seq/2]).
+
+
+%% T‰ll‰ luodaan rivill‰ ROW, sarakkeessa COL sijaitsevalle
+%% solulle uniikki nimi. Nimi koostuu pienest‰ c-kirjaimesta
+%% sek‰ argumentteja ROW ja COL vastaavista numeroista.
+%% Esimerkiksi life:make_cellname(3,5) palauttaa solun nimen‰
+%% atomin 'c35'.
+
+make_cellname(ROW,COL) ->
+  list_to_atom([99,48+ROW,48+COL]).
+
+
+%% Funktiolla list_of_cellanems tuotetaan lista nimi‰, joita
+%% k‰ytet‰‰n soluprosessien rekisterˆimiseen.
+%% Esimerkiksi life:list_of_cellnames(3).
+%% palauttaa listan: [c00,c01,c02,c10,c11,c12,c20,c21,c22]
+%% Huomaa "list comprehension" -rakenteen k‰yttˆ.
+
+list_of_cellnames(Size) ->
+  [make_cellname(ROW,COL) || ROW <- seq(0,Size-1), COL <- seq(0,Size-1)].
+
+
+%% Funktio cells_neighbours palauttaa annetun solun naapurit.
+%% Se tarvitsee myˆs solumaailman koon argumenttinaan,
+%% jotta se osaisi "wr‰p‰t‰" ruudukon reunojen ymp‰ri.
+
+%% Esimerkiksi life:cells_neighbours(c36,8).
+%% palauttaa listan: [c25,c26,c27,c35,c37,c45,c46,c47]
+%% ja life:cells_neighbours(c07,8).
+%% palauttaa listan: [c76,c77,c70,c06,c00,c16,c17,c10]
+%%
+%% 'c07' on siis 8x8-ruutuisen maailman oikeassa yl‰kulmassa
+%% oleva solu, jolla on naapurinaan esimerkiksi vasemmassa
+%% alakulmassa oleva solu c70 ja oikeassa alakulmassa
+%% oleva c77.
+%%
+%% Huomaa "list comprehension"-rakenteessa filtterin
+%% (abs(X)+abs(Y))/=0 k‰yttˆ, joka takaa ett‰ X ja Y
+%% k‰yv‰t l‰pi kaikki muut -1:n, 0:n ja +1:n yhdistelm‰t
+%% paitsi 0,0:n. (Solu ei ole itsens‰ naapuri!)
+
+cells_neighbours(Cellname,Size) ->
+  ROW = nth(2,atom_to_list(Cellname))-48,
+  COL = nth(3,atom_to_list(Cellname))-48,
+  [make_cellname(((Size+ROW+X) rem Size),((Size+COL+Y) rem Size))
+    || X <- [-1,0,+1], Y <- [-1,0,+1], (abs(X)+abs(Y))/=0].
+
+
+%% Funktio liferule kertoo solun oman nykyisen tilan (argumentti C)
+%% ja sen elossa olevien naapurien m‰‰r‰n (argumentti NAlive)
+%% perusteella, onko solu seuraavassa sukupolvessa
+%% elossa (1) vai kuollut (0).
+%% Edellinen toteutuu vain silloin kuin solu on joko
+%% valmiiksi elossa, ja sill‰ on joko 2 tai 3 elossa
+%% olevaa naapuria, tai silloin kuin se on kuollut,
+%% mutta sill‰ on tasan kolme elossa olevaa naapuria.
+%% T‰m‰ ehto on ytimekk‰int‰ testata 'bor' eli binary-or
+%% -operaatiolla:
+
+liferule(C,NAlive) ->
+  if (3 == (NAlive bor C)) -> 1; true -> 0 end.
+
+
+%% Funktio sendstate l‰hett‰‰ prosessille Proc l‰hett‰v‰n
+%% solun nimest‰ (Name) ja tilasta (State) koostuvan
+%% viestin, Erlangin sis‰‰nrakennetulla viestinv‰litysk‰skyll‰ !:
+
+sendstate(Proc,Name,State) -> Proc ! {Name,State}.
+
+
+%% Funtio send_state_to_all l‰hett‰‰ viestin {Name,State}
+%% kaikille listassa Procnames luetelluille prosesseille.
+%% Se k‰ytt‰‰ listan yli iteroimiseen monista muistakin
+%% ohjelmointikielist‰ tuttua foreach-funktionaalia.
+
+send_state_to_all(Name,State,Procnames) ->
+  foreach(fun(P) -> sendstate(P,Name,State) end,Procnames).
+
+
+
+%% Funktion cell ensimm‰inen haara. L‰hett‰‰ valvojaprosessille
+%% oman tilansa (tulostusta varten) ja j‰‰ receive-k‰skyll‰
+%% odottelemaan silt‰ 'next'-viesti‰. Viestin saapumisen j‰lkeen
+%% l‰hett‰‰ oman tilansa kaikille kahdeksalle naapurilleen
+%% ja siirtyy cell-funktion kolmanteen haaraan.
+
+cell(Name,Gen,State,0,0,Neighbours) ->
+  valvoja ! {Name,State},
+  receive
+    next -> send_state_to_all(Name,State,Neighbours),
+            cell(Name,Gen,State,0,1,Neighbours)
+  end;
+
+
+%% Funktion cell toinen haara. Kun viestit kaikilta kahdeksalta
+%% naapurisoluprosessilta ovat saapuneet (eli nelj‰s argumentti
+%% on kasvanut 8:ksi), lasketaan t‰m‰n solun uusi tila ja siirryt‰‰n
+%% takaisin ensimm‰iseen haaraan.
+
+cell(Name,Gen,State,8,NAlivePlus1,Neighbours) ->
+  Newstate = liferule(State,NAlivePlus1 - 1),
+  cell(Name,Gen+1,Newstate,0,0,Neighbours);
+
+
+%% Funktion cell kolmas haara. T‰ss‰ pyˆrit‰‰n niin kauan,
+%% kunnes viestit kaikkien kahdeksan naapurin tilasta
+%% on otettu vastaan.
+cell(Name,Gen,State,NMsgs,NAlivePlus1,Neighbours) ->
+  receive {NName,NState} ->
+    cell(Name,Gen,State,NMsgs+1,NAlivePlus1+NState,
+         Neighbours)
+  end.
+
+
+
+%% Funtio spawn_cell silmukoi uuden soluprosessin ja k‰ynnist‰‰
+%% sen cell-funktion ensimm‰isess‰ haarassa, jossa se l‰hett‰‰
+%% heti kuittauksen tilastaan valvojaprosessille ja j‰‰
+%% odottelemaan silt‰ 'next'-viesti‰, ennen kuin varsinainen
+%% "laskenta" alkaa. K‰ytt‰m‰ll‰ spawn-funktion linkitt‰v‰‰
+%% muotoa spawn_link varmistetaan se, ett‰ j‰rjestelm‰‰n ei
+%% j‰‰ pyˆrim‰‰n soluprosesseja "haamuina", mik‰li niit‰
+%% valvova valvojaprosessi lopetetaan.
+
+spawn_cell(Cellname,Size,InitState) ->
+  register(Cellname,
+           spawn_link(?MODULE, cell,
+                       [Cellname,0,InitState,0,0,
+                        cells_neighbours(Cellname,Size)])).
+
+
+%% Funktio spawn_all_cells(Solujen_nimet,Koko,Tilat)
+%% silmukoi kaikki tarvittavat Koko x Koko soluprosessia,
+%% alustaen niiden tilat kolmantena argumenttina annetussa
+%% listassa olevilla alkutilan tiedoilla.
+%% T‰ss‰ listojen yli iteroimiseen on k‰ytetty Erlangille
+%% tyypillist‰ h‰nt‰rekursiivista rakennetta.
+
+spawn_all_cells([],_,_) -> ok; % Lopetusehto, lista lopussa.
+spawn_all_cells([Cellname|CRest],Size,[InitState|SRest]) ->
+  spawn_cell(Cellname,Size,InitState),
+  spawn_all_cells(CRest,Size,SRest).
+
+
+%% Apufunktio joka l‰hett‰‰ soluprosessille "next"-viestin:
+nextgen(Cellname) -> Cellname ! next.
+
+
+
+%% supervise-funktion ensimm‰inen haara. Valvojaprosessi
+%% k‰ynnistet‰‰n siten, ett‰ se alkaa t‰st‰ haarasta.
+%% Ensiksi silmukoidaan Size x Size soluprosessia,
+%% jonka j‰lkeen kullekin l‰hetet‰‰n "next"-viesti
+%% (merkiksi siit‰, ett‰ voivat aloittaa),
+%% jonka j‰lkeen valvojaprosessi siirtyy supervise-funktion
+%% kolmanteen haaraan odottelemaan solujen tilatietoja.
+
+supervise(Size,Cellnames,InitialStates) ->
+  spawn_all_cells(Cellnames,Size,InitialStates),
+  foreach(fun(Cell) -> nextgen(Cell) end,Cellnames),
+  supervise(Size,Size*Size,0,0,Cellnames,dict:new()).
+
+
+%% T‰t‰ haaraa kutsutaan silloin kun tilatiedot
+%% kaikilta soluilta on vastaanotettu.
+%% L‰hett‰‰ kaikille soluille "next"-viestin,
+%% jotta voivat aloittaa keskin‰isen viestimisens‰
+%% uudestaan, seuraavan sukupolven tilanteen laskemiseksi.
+%% Sill‰ v‰lin n‰ytt‰‰ nykyisen tilanteen konsolilla
+%% funktiota show_cells k‰ytt‰en.
+
+supervise(Size,NCells,Gen,NMsgs,Cellnames,CStates)
+ when NMsgs == NCells ->
+  foreach(fun(Cell) -> nextgen(Cell) end,Cellnames),
+  show_cells(Cellnames,CStates,Size,0),
+  supervise(Size,NCells,Gen+1,0,Cellnames,dict:new());
+
+
+%% T‰ss‰ haarassa pyˆrit‰‰n niin kauan kunnes kaikkien
+%% soluprosessien tilatiedot ovat saapuneet (jonka
+%% tapahduttua siirryt‰‰n automaattisesti edelliseen haaraan),
+%% tai kunnes k‰ytt‰j‰ tahtoo pys‰ytt‰‰ koko simulaation
+%% l‰hett‰m‰ll‰ valvojaprosessille "stop"-viestin.
+%% Mik‰li jotkut soluprosesseista hyytyv‰t jostain syyst‰,
+%% t‰m‰ havaitsee sen receive-k‰skyyn liittyv‰ll‰
+%% after-lauseella, joka on Erlang-kieleen
+%% lis‰tty juuri timeout:tien toteuttamista varten.
+
+supervise(Size,NCells,Gen,NMsgs,Cellnames,CStates) ->
+  receive
+    {CellName,CellState} ->
+       supervise(Size,NCells,Gen,NMsgs+1,Cellnames,
+                 dict:store(CellName,CellState,CStates));
+    stop ->
+      exit(life_stopped)
+  after 10000 ->
+      exit(life_timedout)
+  end.
+
+
+
+%% Funktio show_cells n‰ytt‰‰ assosiatiiviseen CStates-taulukkoon
+%% ker‰tyn simulaation tilan konsolilla yksinkertaisena ASCII-grafiikkana.
+
+show_cells([],_,_,_) -> io:format("~n",[]); % Lopetusehto. Tulosta rivinvaihto.
+
+show_cells([Cell|Cellnames],CStates,Size,Colind) ->
+  State = dict:fetch(Cell,CStates),
+%   Tulosta kunkin rivin lopussa rivinvaihto:
+  if (0 == (Colind rem Size)) -> io:format("~n",[]);
+    true -> ok
+  end,
+  io:format("~s",[nth(1+State,[".","*"])]),
+  show_cells(Cellnames,CStates,Size,Colind+1).
+
+
+pattern2state("*") -> 1; % Asteriskit olkoon el‰vi‰ soluja,
+pattern2state(_) -> 0.   % ja kaikki muut kuolleita.
+
+
+start(InitPattern) ->
+  SquareSize = length(InitPattern),
+  Pattern2state = fun(X) -> pattern2state(X) end,
+  Cellnames = list_of_cellnames(SquareSize),
+  InitStates = map(Pattern2state,append(InitPattern)),
+  register(valvoja,
+           spawn(?MODULE, supervise,
+                 [SquareSize,Cellnames,InitStates])).
+
+
+stop() -> valvoja ! stop. % Pyyt‰‰ valvojaprosessia lopettamaan simulaation.
+
+
+%% Esimerkkej‰ siit‰, kuinka funktiota start kutsutaan:
+
+start_glider() ->
+  start([[" "," "," "," "," "," "," "," "],
+         [" "," ","*"," "," "," "," "," "],
+         [" "," "," ","*"," "," "," "," "],
+         [" ","*","*","*"," "," "," "," "],
+         [" "," "," "," "," "," "," "," "],
+         [" "," "," "," "," "," "," "," "],
+         [" "," "," "," "," "," "," "," "],
+         [" "," "," "," "," "," "," "," "]]).
+
+
+start_spaceship() ->
+  start(
+    [[" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "], % 1
+     [" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "], % 2
+     [" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "], % 3
+     [" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "], % 4
+     [" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "], % 5
+     [" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "], % 6
+     [" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "], % 7
+     [" "," "," "," "," "," "," ","*"," "," "," "," "," "," "," "], % 8
+     [" "," "," "," "," "," "," "," ","*"," "," "," "," "," "," "], % 9
+     [" "," "," "," ","*"," "," "," ","*"," "," "," "," "," "," "], % 10
+     [" "," "," "," "," ","*","*","*","*"," "," "," "," "," "," "], % 11
+     [" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "], % 12
+     [" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "], % 13
+     [" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "], % 14
+     [" "," "," "," "," "," "," "," "," "," "," "," "," "," "," "]] % 15
+       ).
+

@@ -1,0 +1,7 @@
+
+showboard: show generation #, and scores of each.
+moveserver: two-tiered sending of worldview to agents (hashed with now()).
+            worldview should show walls in different way (as three-element tuples?)
+
+Documentation, starting up of everything, etc.
+

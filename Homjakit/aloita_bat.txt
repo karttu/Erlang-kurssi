@@ -1,0 +1,4 @@
+rem Unix/Linux-shellissä, käynnistä esim: näin: erl -setcookie pipari -sname erlang-noden-nimi
+rem "C:\Program Files (x86)\erl5.9.3.1\bin\erl.exe" -setcookie pipari -sname "%1"
+rem Uusimmalla Erlangilla (R16B) pathi on muistaakseni jokin muu:
+C:\Progra~2\erl5.9.3.1\bin\erl.exe -setcookie pipari -sname %1
